@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/include/llvm-c-13",
+                "/usr/include/llvm-13"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/local/bin/g++trunk",
+            "intelliSenseMode": "linux-gcc-x64",
+            "cppStandard": "c++23",
+            "compilerArgs": [
+                "-lstdc++_libbacktrace"
+            ],
+            "cStandard": "c17"
+        }
+    ],
+    "version": 4
+}

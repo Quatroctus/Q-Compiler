@@ -2,3 +2,4 @@
 obj/
 log/
 qcc
+src/lexical/q_scanner.hpp

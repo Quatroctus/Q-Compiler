@@ -1,8 +1,9 @@
 #include <stacktrace>
 
 #include <src/parser/ast/type.hpp>
+#include <src/parser/ast/q_context.hpp>
 
-llvm::Type* Type::getLLVMType(const QContext& qctx, llvm::LLVMContext& ctx) const {
+llvm::Type* Type::getLLVMType(QContext& qctx, llvm::LLVMContext& ctx) const {
     using namespace mpark::patterns;
     return match(this->type)(
         pattern(as<BuiltinType>(arg)) = [&](BuiltinType type) -> llvm::Type* {
@@ -21,21 +22,37 @@ llvm::Type* Type::getLLVMType(const QContext& qctx, llvm::LLVMContext& ctx) cons
             assert(false);
             return nullptr;
         },
-        pattern(as<ArrayType*>(arg)) = [&](const ArrayType* type) -> llvm::Type* {
+        pattern(as<std::unique_ptr<ArrayType>>(arg)) = [&](const std::unique_ptr<ArrayType>& type) -> llvm::Type* {
+            return llvm::PointerType::get(type->elemType.getLLVMType(qctx, ctx), 0);
             std::cerr << "Type::getLLVMType ArrayType is not implemented.\n";
             assert(false);
             return nullptr;
         },
         pattern(as<StructureType>(arg)) = [&](const StructureType& type) -> llvm::Type* {
-            std::cerr << "Type::getLLVMType StructureType is not implemented.\n";
-            std::cerr << std::stacktrace::current() << "\n";
+            if (qctx.structures.contains(type.name)) return qctx.structures.at(type.name).getLLVMType(qctx, ctx);
             assert(false);
             return nullptr;
         },
-        pattern(_) = []() -> llvm::Type* { return nullptr; }
+        pattern(_) = []() -> llvm::Type* { assert(false); }
     );
 }
 
 llvm::Value* Type::getArraylength(const QContext& qctx, llvm::LLVMContext& ctx) const {
     return nullptr;
+}
+
+void ExpandArrayTypes(std::vector<std::pair<Name, Type>>& vec) {
+    using namespace mpark::patterns;
+    for (size_t i = 0; i < vec.size(); i++) {
+        auto it = vec.begin() + i;
+        match((*it).second.type)(
+            pattern(as<std::unique_ptr<ArrayType>>(arg)) = [&vec, &it, &i](const std::unique_ptr<ArrayType>& type) -> void {
+                if (IF_IS(type->arraySize, as<Name>(_))) { // TODO: Will need to check if variable exists in scope in the future. Might be done prior to this though.
+                    vec.insert(it, std::make_pair(std::get<Name>(type->arraySize), BuiltinType::SIZE));
+                    i++;
+                }
+            },
+            pattern(_) = []() -> void {}
+        );
+    }
 }

@@ -24,27 +24,24 @@ struct ArrayType;
 struct QContext;
 struct Type {
     using TypedValue = std::pair<Type, llvm::Value*>;
-    using Types = std::variant<BuiltinType, StructureType, ArrayType*>;
+    using Types = std::variant<BuiltinType, StructureType, std::unique_ptr<ArrayType>>;
     Types type;
-    template<typename T>
-    inline Type(T&& type) : type(std::forward<T>(type)) {}
+    inline Type(std::unique_ptr<ArrayType>& type) = delete;
+    inline Type(const std::unique_ptr<ArrayType>& type) = delete;
+    // template<typename T>
+    // inline Type(T&& type) : type(std::forward<T>(type)) {}
+
+    inline Type(BuiltinType type) : type{type} {}
+    inline Type(StructureType&& type) : type{std::move(type)} {}
+    inline Type(const StructureType& type) : type{type} {}
+    inline Type(std::unique_ptr<ArrayType>&& type) : type{std::move(type)} {}
+
     inline operator Types&() { return this->type; }
     inline Type(const Type& type);
-    inline Type(Type&& type) {
-        using namespace mpark::patterns;
-        match(type.type)(
-            pattern(as<ArrayType*>(arg)) = [this] (ArrayType*& type) {
-                this->type = type;
-                type = nullptr;
-            },
-            pattern(_) = [&type, this] {
-                this->type = std::move(type.type);
-            }
-        );
-    }
-    inline Type& operator=(const Type&);
-    Type& operator=(Type&&) = delete;
-    inline ~Type();
+    inline Type(Type&& type) = default;
+    Type& operator=(const Type& type);
+    Type& operator=(Type&& type) = default;
+    ~Type() = default;
 
     inline bool operator==(const Type& type) const;
 
@@ -295,14 +292,14 @@ struct Type {
         );
     }
 
-    llvm::Type* getLLVMType(const QContext& qctx, llvm::LLVMContext& ctx) const;
+    llvm::Type* getLLVMType(QContext& qctx, llvm::LLVMContext& ctx) const;
 
     llvm::Value* getArraylength(const QContext& qctx, llvm::LLVMContext& ctx) const;
 
 };
 
 struct ArrayType {
-    using Length = std::variant<size_t, Name>;
+    using Length = std::variant<std::monostate, size_t, Name/*, std::shared_ptr<ExpressionNode>*/>;
     Type elemType;
     Length arraySize;
     inline ArrayType(Type&& type, Length&& length)
@@ -318,7 +315,7 @@ inline bool Type::operator==(const Type& type) const {
         pattern(as<StructureType>(arg), as<StructureType>(arg)) = [](const StructureType& s1, const StructureType& s2) -> bool {
             return s1.name == s2.name;
         },
-        pattern(as<ArrayType*>(arg), as<ArrayType*>(arg)) = [](const ArrayType* a1, const ArrayType* a2) -> bool {
+        pattern(as<std::unique_ptr<ArrayType>>(arg), as<std::unique_ptr<ArrayType>>(arg)) = [](const std::unique_ptr<ArrayType>& a1, const std::unique_ptr<ArrayType>& a2) -> bool {
             return a1->elemType == a2->elemType && a1->arraySize == a2->arraySize; // TODO: How do I check the arraySize appropriately.
         },
         pattern(_, _) = []() -> bool { return false; }
@@ -328,22 +325,15 @@ inline bool Type::operator==(const Type& type) const {
 inline Type::Type(const Type& type) {
     using namespace mpark::patterns;
     match(type.type)(
-        pattern(as<ArrayType*>(arg)) = [this] (ArrayType* const& type) {
-            this->type = new ArrayType{*type};
+        pattern(as<std::unique_ptr<ArrayType>>(arg)) = [this] (const std::unique_ptr<ArrayType>& type) {
+            this->type = std::make_unique<ArrayType>(*type);
         },
-        pattern(_) = [&type, this] {
-            this->type = type.type;
+        pattern(as<BuiltinType>(_)) = [&type, this] {
+            this->type = std::get<BuiltinType>(type.type);
+        },
+        pattern(as<StructureType>(_)) = [&type, this] {
+            this->type = std::get<StructureType>(type.type);
         }
-    );
-}
-
-inline Type::~Type() {
-    using namespace mpark::patterns;
-    match(this->type)(
-        pattern(as<ArrayType*>(arg)) = [] (ArrayType* type) { if (type) {
-            delete type;
-        } },
-        pattern(_) = [this] { this->type.~Types(); }
     );
 }
 
@@ -351,16 +341,22 @@ inline Type& Type::operator=(const Type& type) {
     using namespace mpark::patterns;
     this->~Type();
     match(type.type)(
-        pattern(as<ArrayType*>(arg)) = [this](ArrayType* const& type) { if (type) {
-            this->type = new ArrayType{*type};
+        pattern(as<std::unique_ptr<ArrayType>>(_)) = [this, &type]() { if (std::get<std::unique_ptr<ArrayType>>(type.type)) {
+            this->type = std::make_unique<ArrayType>(*std::get<std::unique_ptr<ArrayType>>(type.type));
         }},
-        pattern(_) = [this, &type] { this->type = type.type; }
+        pattern(as<BuiltinType>(_)) = [this, &type] {
+            this->type = std::get<BuiltinType>(type.type);
+        },
+        pattern(as<StructureType>(_)) = [this, &type] {
+            this->type = std::get<StructureType>(type.type);
+        }
     );
     return *this;
 }
 
 inline std::ostream& operator<<(std::ostream& out, const Type& type) {
     using namespace mpark::patterns;
+    if (type.type.valueless_by_exception()) assert(false);
     match(type.type)(
         pattern(as<BuiltinType>(arg)) = [&out] (BuiltinType builtin) {
             switch (builtin) {
@@ -383,7 +379,7 @@ inline std::ostream& operator<<(std::ostream& out, const Type& type) {
         pattern(as<StructureType>(arg)) = [&out] (const StructureType& type) {
             out << type.name;
         },
-        pattern(as<ArrayType*>(arg)) = [&out] (const ArrayType* type) {
+        pattern(as<std::unique_ptr<ArrayType>>(arg)) = [&out] (const std::unique_ptr<ArrayType>& type) {
             out << type->elemType << "[" << type->arraySize << "]";
         }
     );
@@ -411,7 +407,9 @@ inline static Type MakeType(Name&& name) {
     );
 }
 
-inline static Type MakeArrayType(Name&& name, ArrayType::Length&& length) {
-    ArrayType* array = new ArrayType{MakeType(std::move(name)), ArrayType::Length{std::move(length)}};
-    return Type{array};
+inline static Type MakeArrayType(Type&& type, ArrayType::Length&& length) {
+    auto array = std::make_unique<ArrayType>(std::move(type), ArrayType::Length{std::move(length)});
+    return Type{std::move(array)};
 }
+
+void ExpandArrayTypes(std::vector<std::pair<Name, Type>>& vec);

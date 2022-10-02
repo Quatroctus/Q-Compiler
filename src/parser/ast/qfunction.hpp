@@ -19,7 +19,9 @@ struct QFunction {
     Type returnType;
     std::shared_ptr<ExpressionNode> value;
     QFunction(const Name& name, std::vector<std::pair<Name, Type>>&& parameters, Type&& returnType, std::shared_ptr<ExpressionNode> value)
-        : name{name}, parameters{std::move(parameters)}, returnType{std::move(returnType)}, value{value} {}
+        : name{name}, parameters{std::move(parameters)}, returnType{std::move(returnType)}, value{value} {
+            ExpandArrayTypes(this->parameters);
+        }
 
     void llvmEvaluate(QContext& qctx, llvm::LLVMContext& ctx, llvm::IRBuilder<>& builder) const {
         // TODO: Evaluate a function.

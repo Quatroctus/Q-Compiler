@@ -36,6 +36,6 @@ struct StringNode : public ExpressionNode {
     }
 
     inline virtual Type getType() const override {
-        return MakeArrayType({{}, "u8"}, value.size() + 1);
+        return MakeArrayType(MakeType(Name{{}, "u8"}), value.size() + 1);
     }
 };

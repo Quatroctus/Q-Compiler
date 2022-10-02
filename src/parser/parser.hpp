@@ -140,19 +140,30 @@ private:
     template<typename Iter>
     Type parseType(Iter begin, Iter end) {
         using namespace mpark::patterns;
-        if (IF_IS((*std::prev(end)).type, as<SingleType>(SingleType::RBRACE))) {
-            auto it = std::find_if(begin, end, [](const auto& target) {
-                return IF_IS(target.type, as<SingleType>(SingleType::LBRACE));
-            });
-            return MakeArrayType(
-                parseName(begin, it),
-                parseName(std::next(it), std::prev(end))
-            );
+        constexpr auto isLBrace = [](const auto& target) {
+            return IF_IS(target.type, as<SingleType>(SingleType::LBRACE));
+        };
+        auto it = std::find_if(begin, end, isLBrace);
+        std::optional<Type> type = MakeType(parseName(begin, end));
+        if (it != end) { // Array
+            auto iter = it;
+            while (iter != end) {
+                iter = std::next(iter);
+                if (IF_IS((*iter).type, as<SingleType>(SingleType::RBRACE))) {
+                    type = MakeArrayType(std::move(*type), std::monostate{});
+                    continue;
+                } // TODO: Parse Expressions.
+                // TODO: Name hard to parse, because we won't know how much to advance `iter`.
+                //      Make shift solution would be to std::find_if to the next '['???
+                auto name = parseName(iter, end);
+                type = MakeArrayType(std::move(*type), name);
+                iter = std::find_if(iter, end, isLBrace);
+            }
         }
-        return MakeType(parseName(begin, end));
+        return *type;
     }
-    Type parseType(const std::vector<Token>&);
-    Type parseType(std::vector<Token>&&);
+    inline Type parseType(const std::vector<Token>&);
+    inline Type parseType(std::vector<Token>&&);
 
     std::shared_ptr<ExpressionNode> parseExpression(ExpressionOrConstructor&, std::vector<Token>&);
     std::vector<std::shared_ptr<ExpressionNode>> parseExpressions(CollectedExpressions&, std::vector<Token>&);

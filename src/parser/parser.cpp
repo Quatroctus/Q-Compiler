@@ -19,10 +19,6 @@
 
 #define AS(type, value) static_cast<type>(value)
 
-// void Parser::parseGlobal(Lexer& lexer, std::map<std::string, FunctionDef>& globalFunctions, std::map<std::string, VariableDef>& globalVariables) {
-
-// }
-
 void Parser::parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables, std::unordered_map<Name, QFunction>& functions) {
     using namespace mpark::patterns;
     while (!this->expect<SingleType::END>(lexer)) {
@@ -38,6 +34,7 @@ void Parser::parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables,
         if (!typing) {
             // ERROR: Expected parameter list and return type or variable type.
         }
+
         if ((*typing).first.empty()) { // Variable
             std::cerr << "Parser::parse Variable\n";
             // TODO: Handle the two types of expression equivalents.
@@ -134,28 +131,30 @@ std::vector<Token> Parser::collectType(Lexer& lexer) {
         if (nix) return {(*nix).first};
         return {};
     }
-    auto lbOpt = this->expect<SingleType::LBRACE>(lexer);
-    if (lbOpt) {
-        tokens.push_back(std::move((*lbOpt).first));
 
-        // TODO: Collect tokens for an expression.
-        // TODO: Rewrite to support empty braces as array type.
-        // this->collectExpresion(lexer);
-        auto lengthName = this->collectName(lexer);
-        if (lengthName.empty()) {
-            lexer.store(tokens);
-            return {};
-        }
-        tokens.insert(tokens.end(), std::make_move_iterator(lengthName.begin()), std::make_move_iterator(lengthName.end()));
-
-        auto rbOpt = this->expect<SingleType::RBRACE>(lexer);
-        if (!rbOpt) {
-            lexer.store(tokens);
-            return {};
-        }
-        tokens.push_back(std::move((*rbOpt).first));
-    }
-
+    do {
+        auto lbOpt = this->expect<SingleType::LBRACE>(lexer);
+        if (lbOpt) {
+            tokens.push_back(std::move((*lbOpt).first));
+            auto rbOpt = this->expect<SingleType::RBRACE>(lexer);
+            if (rbOpt) {
+                tokens.push_back(std::move((*rbOpt).first));
+                continue;
+            }
+            auto lengthName = this->collectName(lexer);
+            if (!lengthName.empty()) {
+                auto rbOpt = this->expect<SingleType::RBRACE>(lexer);
+                if (!rbOpt) {
+                    lexer.store(lengthName);
+                } else {
+                    tokens.insert(tokens.end(), std::make_move_iterator(lengthName.begin()), std::make_move_iterator(lengthName.end()));
+                    tokens.push_back(std::move((*rbOpt).first));
+                    continue;
+                }
+            }
+            // TODO: Collect Expression.
+        } else break;
+    } while (true);
     return tokens;
 }
 
@@ -368,7 +367,7 @@ Name Parser::parseName(std::vector<Token>&& tokens) {
     );
 }
 
-Type Parser::parseType(const std::vector<Token>& tokens) {
+inline Type Parser::parseType(const std::vector<Token>& tokens) {
     return this->parseType(tokens.begin(), tokens.end());
     // using namespace mpark::patterns;
     // if (IF_IS(tokens.back().type, as<SingleType>(SingleType::RBRACE))) {
@@ -385,13 +384,13 @@ Type Parser::parseType(const std::vector<Token>& tokens) {
     // return MakeType(parseName(tokens));
 }
 
-Type Parser::parseType(std::vector<Token>&& tokens) {
-    auto result = this->parseType(
+inline Type Parser::parseType(std::vector<Token>&& tokens) {
+    auto result{this->parseType(
         std::make_move_iterator(tokens.begin()),
         std::make_move_iterator(tokens.end())
-    );
+    )};
     tokens.clear();
-    return result;
+    return std::move(result);
     // using namespace mpark::patterns;
     // if (IF_IS(tokens.back().type, as<SingleType>(SingleType::RBRACE))) {
     //     auto it = std::make_move_iterator(std::find_if(
@@ -615,11 +614,13 @@ std::optional<Parser::VarDeclType> Parser::parseVarDeclType(Lexer& lexer) {
             lexer.store(type);
             lexer.store(std::move((*idOpt).first));
             auto type = this->tryParseType(lexer);
-            if (type) return std::make_pair(std::move(params), std::move(*type));
+            if (type) {
+                return std::make_pair(std::move(params), std::move(*type));
+            }
             return std::nullopt;
         }
-
-        params.emplace_back(Name{{}, std::move((*idOpt).second.value)}, this->parseType(type));
+        auto ty{this->parseType(type)};
+        params.emplace_back(Name{{}, std::move((*idOpt).second.value)}, ty);
         idOpt = nextIdOpt;
     }
 

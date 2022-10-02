@@ -11,7 +11,6 @@ struct IntegerNode : public ExpressionNode {
 
     inline virtual TypedValue llvmEvaluate(QContext& qctx, llvm::LLVMContext& ctx, llvm::IRBuilder<>& builder) const override {
         auto type = llvm::IntegerType::get(ctx, static_cast<uint32_t>(this->size));
-        std::cerr << "IntegerNode::value: " << this->value << "\n";
         return TypedValue{
             this->getType(), 
             llvm::ConstantInt::get(type, llvm::APInt{static_cast<uint32_t>(this->size), this->value})

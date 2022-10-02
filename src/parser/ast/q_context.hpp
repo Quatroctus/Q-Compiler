@@ -5,6 +5,7 @@
 
 #include <src/parser/ast/name.hpp>
 #include <src/parser/ast/type.hpp>
+#include <src/parser/ast/q_structure.hpp>
 
 #include <llvm-13/llvm/IR/Value.h>
 #include <llvm-13/llvm/IR/Function.h>
@@ -39,9 +40,19 @@ struct QContext {
     std::unordered_map<std::string, llvm::ArrayRef<llvm::Constant*>> stringLiterals;
     std::unordered_map<Name, llvm::FunctionCallee> functions;
     std::unordered_map<Name, TypedValue>& variables; // Global variables
+    std::unordered_map<Name, QStructure> structures;
     std::unique_ptr<llvm::Module> theModule;
     QContext(std::unique_ptr<llvm::Module>&& module)
-        : scope{new Scope(nullptr, {})}, variables{scope->variables}, theModule{std::move(module)} {}
+        : scope{new Scope(nullptr, {})}, variables{scope->variables}, theModule{std::move(module)},
+          structures{
+            std::make_pair(
+                Name{{}, "string"},
+                QStructure{
+                    Name{{}, "string"},
+                    std::make_pair(Name{{}, "cStr"}, MakeArrayType(MakeType(Name{{}, "u8"}), Name{{}, "length"}))
+                }
+            )
+          } {}
 
     void prime(std::unordered_map<Name, llvm::FunctionCallee>&& functions) {
         this->functions = std::move(functions);

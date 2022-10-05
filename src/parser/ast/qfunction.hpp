@@ -24,7 +24,6 @@ struct QFunction {
         }
 
     void llvmEvaluate(QContext& qctx, llvm::LLVMContext& ctx, llvm::IRBuilder<>& builder) const {
-        // TODO: Evaluate a function.
         using namespace mpark::patterns;
         auto& fnCallee = qctx.functions.at(this->name);
         auto fnType = fnCallee.getFunctionType();
@@ -38,7 +37,7 @@ struct QFunction {
         if (std::dynamic_pointer_cast<BlockNode>(this->value)) { // If we are a block { statement; ...}
             if (!this->value->llvmEvaluate(qctx, ctx, builder).second) {
                 if (IF_IS(this->returnType.type, as<BuiltinType>(BuiltinType::NIX))) {
-                    builder.CreateRet(nullptr);
+                    builder.CreateRetVoid();
                 } else {
                     // ERROR: Reached end of function expecting a return value.
                 }
@@ -47,9 +46,10 @@ struct QFunction {
             auto val = this->value->llvmEvaluate(qctx, ctx, builder);
             if (!val.second) {
                 if (IF_IS(this->returnType.type, as<BuiltinType>(BuiltinType::NIX))) {
-                    builder.CreateRet(nullptr);
+                    builder.CreateRetVoid();
                 } else {
                     // ERROR: Reached end of function expecting a return value.
+                    builder.CreateRetVoid(); // FIXME: Remove this after if statements support returning.
                 }
             } else {
                 auto[t, v] = val.first.convert(qctx, ctx, builder, val.second, this->returnType);

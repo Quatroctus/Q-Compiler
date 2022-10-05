@@ -25,42 +25,60 @@ Lexer::~Lexer() {
 }
 
 Token Lexer::nextToken() {
-    if (!this->toks.empty()) {
-        Token tok = this->toks.front();
-        this->toks.pop_front();
-        return tok;
-    }
     using namespace mpark::patterns;
     static std::optional<Token> preservedToken{};
-    if (preservedToken) {
-        Token tok = *preservedToken;
-        preservedToken.reset();
-        return tok;
-    }
-    Token tok{};
-    std::string error{};
-    std::optional<Location> cached{};
-    while (match((tok = yylex(this->loc)).type)(
-        pattern(as<ErrorType>(_)) = [] { return true; },
-        pattern(_) = [] { return false; }
-    )) {
-        ErrorType& err = std::get<ErrorType>(tok.type);
-        if (!cached) cached = tok.location.left;
-        error += err.value;
-    }
-    if (cached) {
-        preservedToken = tok;
-        return Token{{*cached, this->loc.left}, ErrorType{error}};
+
+    if (this->storage) {
+        auto storage = *this->storage;
+        if (storage.size() == 1) return storage.back();
+        auto tok = storage.back();
+        storage.pop_back();
+        return std::move(tok);
     } else {
+        if (!this->toks.empty()) {
+            auto tok = this->toks.front();
+            this->toks.pop_front();
+            return tok;
+        }
+        if (preservedToken) {
+            auto tok = *preservedToken;
+            preservedToken.reset();
+            return tok;
+        }
+        Token tok{};
+        std::string error{};
+        std::optional<Location> cached{};
+        while (match((tok = yylex(this->loc)).type)(
+            pattern(as<ErrorType>(arg)) = [&](ErrorType& err) {
+                if (!cached) cached = tok.location.left;
+                error += err.value;
+                return true;
+            },
+            pattern(_) = [] { return false; }
+        ));
+        if (cached) {
+            preservedToken = tok;
+            return Token{{*cached, this->loc.left}, ErrorType{error}};
+        }
         return tok;
     }
 }
 
 void Lexer::store(Token&& tok) {
-    this->toks.push_front(std::move(tok));
+    if (this->storage) {
+        auto storage = *this->storage;
+        storage.push_back(std::move(tok));
+    } else {
+        this->toks.push_front(std::move(tok));
+    }
 }
 
 void Lexer::store(std::vector<Token>& tokens) {
-    this->toks.insert(this->toks.begin(), std::make_move_iterator(tokens.begin()), std::make_move_iterator(tokens.end()));
+    if (this->storage) {
+        auto storage = *this->storage;
+        storage.insert(storage.end(), std::make_move_iterator(tokens.rbegin()), std::make_move_iterator(tokens.rend()));
+    } else {
+        this->toks.insert(this->toks.begin(), std::make_move_iterator(tokens.begin()), std::make_move_iterator(tokens.end()));
+    }
     tokens.clear();
 }

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <deque>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <deque>
 
 #include <src/lexical/location.hpp>
 #include <src/lexical/token.hpp>
@@ -19,8 +20,14 @@ public:
     void store(Token&&);
     void store(std::vector<Token>&);
 
+    inline void primeStorage(std::vector<Token>&& storage) {
+        this->storage = std::move(storage);
+        (*this->storage).push_back(Token{storage.back().location, SingleType::END});
+        std::reverse((*this->storage).begin(), (*this->storage).end());
+    }
+    inline void wipeStorage() { this->storage.reset(); }
+
     inline static Token MakeInteger(const std::string& integer, uint32_t base, const SpanLocation& loc) {
-        std::cerr << "Lexer::MakeInteger \"" << integer << "\"" << std::stoull(integer, nullptr, base) << "\n";
         return Token{loc, IntegerType{std::stoull(integer, nullptr, base)}};
     }
     
@@ -151,6 +158,7 @@ public:
 
 private:
     SpanLocation loc;
+    std::optional<std::vector<Token>> storage{};
     std::deque<Token> toks;
 
     void scan_begin(const std::string&);

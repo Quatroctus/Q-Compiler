@@ -13,9 +13,7 @@ struct QStructure {
     QStructure(Name&& name, Members&&... members) : name{std::move(name)}, members{std::forward<Members>(members)...} {
         ExpandArrayTypes(this->members);
     }
-    // TODO: Methods?
-    // TODO: Generics
-    // TODO: Other things.
+    // TODO: Methods?, Generics, Other things.
     inline llvm::StructType* getLLVMType(QContext& qctx, llvm::LLVMContext& ctx) {
         if (this->llvmStructure) return this->llvmStructure;
         std::vector<llvm::Type*> memTypes{this->members.size()};

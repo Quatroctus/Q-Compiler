@@ -21,10 +21,6 @@ struct QVariable {
         : name{std::move(name)}, type{std::move(type)}, value{value} {}
 
     llvm::Value* llvmEvaluate(QContext& qctx, llvm::LLVMContext& ctx, llvm::IRBuilder<>& builder) const {
-        // TODO: Evaluate a variable.
-        // if (qctx.scope->contains(this->name)) {
-        //     // ERROR: Duplicate variable.
-        // }
         if (qctx.scope->lastScope) {
             // Do local variable in entry block.
             auto fn = builder.GetInsertBlock()->getParent();

@@ -12,7 +12,6 @@ struct BinaryOperatorNode : public ExpressionNode {
         : op{op}, left{left}, right{right} {}
 
     inline virtual TypedValue llvmEvaluate(QContext& qctx, llvm::LLVMContext& ctx, llvm::IRBuilder<>& builder) const override {
-        // TODO: Evaluate this shit.
         using enum OperatorType;
         auto[lhsType, lhsValue] = this->left->llvmEvaluate(qctx, ctx, builder);
         auto[rhsType, rhsValue] = this->right->llvmEvaluate(qctx, ctx, builder);

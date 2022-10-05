@@ -75,7 +75,6 @@ bool operator==(const TokenType&, TokenTypes);
 inline bool operator==(TokenTypes types, const TokenType& type) { return type == types; }
 
 struct Token {
-    // TODO: Other info all tokens should have like location.
     SpanLocation location;
     TokenType type;
 

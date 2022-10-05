@@ -94,7 +94,6 @@ int main(int argc, char** args) {
 
     // TODO: Perform Static Analysis.
 
-    // TODO: Perform LLVM AST evaluation.
     llvm::LLVMContext ctx;
     QContext qctx{std::make_unique<llvm::Module>(args[1], ctx)};
     assert(qctx.theModule.get());
@@ -132,7 +131,6 @@ int main(int argc, char** args) {
         llvm::verifyFunction(*((llvm::Function*) qctx.functions.at(fnName).getCallee()));
     }
 
-    // TODO: Output LLVM output.
     qctx.theModule->print(llvm::outs(), NULL);
     std::string outFile = args[1];
     outFile = outFile.substr(0, Util::FindLast(outFile, '.')) + 'o';

@@ -6,6 +6,7 @@
 #include <src/parser/ast/expression.hpp>
 #include <src/parser/ast/binary_operator_node.hpp>
 #include <src/parser/ast/boolean_node.hpp>
+#include <src/parser/ast/conditional_node.hpp>
 #include <src/parser/ast/constructor_node.hpp>
 #include <src/parser/ast/identifier_node.hpp>
 #include <src/parser/ast/index_node.hpp>
@@ -37,9 +38,6 @@ void Parser::parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables,
 
         if ((*typing).first.empty()) { // Variable
             std::cerr << "Parser::parse Variable\n";
-            // TODO: Handle the two types of expression equivalents.
-            //    expression, expression, ..., expression;
-            //    {expression, expression, ..., expression}, ..., {expression, expression, ..., expression};
             std::vector<Token> exprTokens;
             auto rawExpressions = this->collectExpressions(lexer, exprTokens);
             bool allConstructors = std::accumulate(rawExpressions.cbegin(), rawExpressions.cend(), true, [](bool b, const ExpressionOrConstructor& e){return b && e.value.index() == 1;});
@@ -91,12 +89,12 @@ void Parser::parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables,
             //         offer expression;
             //         exert expression;
             //    }
-            // TODO: Expand ArrayType parameters.
             std::vector<Token> tokens;
             auto rawExpressions = this->collectExpressions(lexer, tokens);
             if (rawExpressions.empty() || tokens.empty()) {
                 // Try to parse a code block.
-
+                std::cerr << "Parser::parse parsing function code block is not implemented.\n";
+                assert(false);
             } else {
                 if (!this->expect<SingleType::SEMICOLON>(lexer)) {
                     // ERROR: Expected Semicolon but got ...
@@ -104,11 +102,11 @@ void Parser::parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables,
                 auto expressions = this->parseExpressions(rawExpressions, tokens);
                 std::shared_ptr<ExpressionNode> value;
                 auto exprtype = expressions[0]->getType();
-                if (expressions.size() > 1 || (rawExpressions[0].value.index() == 0 && !(*typing).second.isConvertible(exprtype))) {
-                    value = std::make_shared<ConstructorNode>((*typing).second, std::move(expressions));
-                } else {
+                //if (expressions.size() > 1 || (rawExpressions[0].value.index() == 0 && !(*typing).second.isConvertible(exprtype))) {
+                //    value = std::make_shared<ConstructorNode>((*typing).second, std::move(expressions));
+                //} else {
                     value = expressions[0];
-                }
+                //}
                 functions.emplace(names[0], QFunction{names[0], std::move((*typing).first), std::move((*typing).second), value});
             }
         }
@@ -196,6 +194,102 @@ Parser::CollectedExpressions Parser::collectExpressions(Lexer& lexer, std::vecto
             RawExpression expression{};
             std::vector<std::pair<size_t, OperatorType>> storage;
             while (true) {
+                auto lps = this->collectAll<SingleType::LPAREN>(lexer);
+                std::vector<Token> rps{};
+                auto ifs = this->expect<SingleType::IF>(lexer);
+                if (!lps.empty() && ifs) {
+                    std::vector<Token> storage{};
+                    this->collectBalance<SingleType::LPAREN, SingleType::RPAREN>(lexer, storage, lps.size());
+                    size_t count = lps.size() + 1;
+                    auto firstnot = std::find_if(storage.rbegin(), storage.rend(), [&count](const auto& tok){ count--; return count == 0 || !IF_IS(tok.type, as<SingleType>(SingleType::RPAREN)); });
+                    rps.insert(rps.end(), std::make_move_iterator(storage.rbegin()), std::make_move_iterator(firstnot));
+                    storage.erase(storage.end() - (firstnot - storage.rbegin()), storage.end());
+                    lexer.primeStorage(std::move(storage));
+                } else {
+                    if (!lps.empty()) lexer.store(lps);
+                }
+
+                if (ifs) {
+                    if (!lps.empty()) {tokens.insert(tokens.end(), std::make_move_iterator(lps.begin()), std::make_move_iterator(lps.end())); lps.clear();}
+                    size_t start = tokens.size();
+                    Conditional* conditional = new Conditional();
+                    tokens.push_back(std::move((*ifs).first));
+                    auto condExpr = this->collectExpressions(lexer, tokens);
+                    if (condExpr.empty()) {
+                        // ERROR: Expected conditional expression.
+                        std::cerr << "Expected conditional expression.\n";
+                        assert(false);
+                    } else if (condExpr.size() > 1) {
+                        // ERROR: IF statement can only take 1 expression.
+                        std::cerr << "IF statement can only take 1 expression.\n";
+                        assert(false);
+                    }
+                    auto expr = this->collectExpressions(lexer, tokens);
+                    if (expr.empty()) {
+                        // TODO: Parse Block.
+                        std::cerr << "Parsing statement blocks is not implemented yet.\n";
+                        assert(false);
+                    } else if (expr.size() > 1) {
+                        // ERROR: IF statement must only have 1 expression.
+                        std::cerr << "IF statement can only take 1 expression.\n";
+                        assert(false);
+                    } else {
+                        // We now have expression POG.
+                        conditional->conditionals.emplace_back(std::move(condExpr[0]), std::move(expr[0]));
+                    }
+
+                    while (true) {
+                        auto elif = this->expect<SingleType::ELIF>(lexer);
+                        if (!elif) break;
+                        tokens.push_back(std::move((*elif).first));
+                        auto elCond = this->collectExpressions(lexer, tokens);
+                        if (elCond.empty()) {
+                            // ERROR: Expected conditional expression.
+                            std::cerr << "Expected conditional expression.\n";
+                            assert(false);
+                        } else if (elCond.size() > 1) {
+                            // ERROR: ELIF statement can only take 1 expression.
+                            std::cerr << "ELIF statement can only take 1 expression.\n";
+                            assert(false);
+                        }
+                        auto expr = this->collectExpressions(lexer, tokens);
+                        if (expr.empty()) {
+                            // TODO: Parse Block.
+                            std::cerr << "Parsing statement blocks is not implemented yet.\n";
+                            assert(false);
+                        } else if (expr.size() > 1) {
+                            // ERROR: ELIF statement must only have 1 expression.
+                            std::cerr << "ELIF statement must only have 1 expression.\n";
+                            assert(false);
+                        } else {
+                            // We now have expression POG.
+                            conditional->conditionals.emplace_back(std::move(condExpr[0]), std::move(expr[0]));
+                        }
+                    }
+                    auto el = this->expect<SingleType::ELSE>(lexer);
+                    if (el) {
+                        tokens.push_back(std::move((*el).first));
+                        auto expr = this->collectExpressions(lexer, tokens);
+                        if (expr.empty()) {
+                            // TODO: Parse Block.
+                            std::cerr << "Parsing statemnt blocks is not implemented yet.\n";
+                            assert(false);
+                        } else if (expr.size() > 1) {
+                            // ERROR: ELSE statement must have 1 expression.
+                            std::cerr << "ELSE statement must have 1 expression.\n";
+                            assert(false);
+                        } else {
+                            // We now have expression POG.
+                            conditional->elseExpr = std::move(expr[0]);
+                        }
+                    }
+                    if (!lps.empty()) {
+                        tokens.insert(tokens.end(), std::make_move_iterator(rps.begin()), std::make_move_iterator(rps.end()));
+                    }
+                    expression.emplace_back(start, conditional);
+                    lastWasOp = false;
+                    continue;
+                }
                 OperatorType opType{OperatorType::LPAREN};
                 auto op = this->expect<OPERATORS>(lexer);
                 if (op) {
@@ -327,7 +421,6 @@ Parser::CollectedExpressions Parser::collectExpressions(Lexer& lexer, std::vecto
                                         }
                                         tokens.push_back(std::move((*rcurly).first));
                                         expression.emplace_back(stored, new Constructor{std::move(expressions)});
-                                        //loop = false; // TODO: This is not correct. We should be able to invoke or index a constructed type. We shouldn't be able to construct from a function call or index though.
                                     },
                                     pattern(_) = [&] {
                                         lexer.store(std::move(token));
@@ -425,7 +518,6 @@ std::shared_ptr<ExpressionNode> Parser::parseExpression(ExpressionOrConstructor&
                             exprStack.push_back(std::make_shared<BooleanNode>(std::get<BooleanType>(tokens.at(idx).type)));
                             break;
                         case LiteralType::INTEGER:
-                            std::cerr << "Token: " << tokens.at(idx) << "\n";
                             exprStack.push_back(std::make_shared<IntegerNode>(std::get<IntegerType>(tokens.at(idx).type)));
                             break;
                         case LiteralType::FLOATING:
@@ -435,7 +527,6 @@ std::shared_ptr<ExpressionNode> Parser::parseExpression(ExpressionOrConstructor&
                             exprStack.push_back(std::make_shared<StringNode>(std::get<StringLiteralType>(tokens.at(idx).type)));
                             break;
                         case LiteralType::IDENTIFIER:
-                            // TODO: Check forward in the expr.
                             exprStack.push_back(std::make_shared<IdentifierNode>(this->parseName(tokens.begin() + idx, tokens.end())));
                             while (
                                 (it + 1) != expr.cend()
@@ -453,17 +544,32 @@ std::shared_ptr<ExpressionNode> Parser::parseExpression(ExpressionOrConstructor&
                                         exprStack.push_back(std::make_shared<FNCallNode>(target, this->parseExpressions(call->arguments, tokens)));
                                         return false;
                                     },
-                                    //pattern(as<Constructor*>(arg)) = [&](Constructor* cs) { // TODO: ConstructorNode takes a type. 
-                                    //    std::shared_ptr<ExpressionNode> target = exprStack.back();
-                                    //    exprStack.pop_back();
-                                    //    exprStack.push_back(std::make_shared<ConstructorNode>(target, this->parseExpressions(cs->arguments, tokens)));
-                                    //},
+                                    pattern(as<Constructor*>(arg)) = [&](Constructor* cs) { // TODO: ConstructorNode takes a type. 
+                                        std::cerr << "Constructors are not supported as an expression yet.\n";
+                                        assert(false);
+                                        return false;
+                                    },
+                                    
                                     pattern(_) = [] { return true; }
                                 )) break;
                                 it++;
                             }
                             break;
                     }
+                },
+                pattern(as<Conditional*>(arg)) = [&](Conditional* cond) {
+                    std::vector<std::pair<std::shared_ptr<ExpressionNode>, std::shared_ptr<ExpressionNode>>> ifs{cond->conditionals.size()};
+                    std::transform(cond->conditionals.begin(), cond->conditionals.end(), ifs.begin(),
+                    [this, &tokens](std::pair<ExpressionOrConstructor, ExpressionOrConstructor>& p){
+                        return std::make_pair(
+                            this->parseExpression(p.first, tokens),
+                            this->parseExpression(p.second, tokens)
+                        );
+                    });
+                    std::shared_ptr<ExpressionNode> el{};
+                    if (cond->elseExpr)
+                        el = this->parseExpression((*cond->elseExpr), tokens);
+                    exprStack.push_back(std::make_shared<ConditionalNode>(std::move(ifs), el));
                 },
                 pattern(as<OperatorType>(arg)) = [&](OperatorType type) {
                     switch (type) {
@@ -521,58 +627,6 @@ std::vector<std::shared_ptr<ExpressionNode>> Parser::parseExpressions(CollectedE
     for (ExpressionOrConstructor& collected : csExpressions) {
         expressions.push_back(this->parseExpression(collected, tokens));
     }
-    // std::stack<std::shared_ptr<ExpressionNode>> exprStack;
-    // for (const auto&[idx, piece] : raw.second) {
-    //     match(piece)(
-    //         pattern(as<LiteralType>(arg)) = [&] (LiteralType type) {
-    //             switch (type) {
-    //                 case LiteralType::IDENTIFIER:
-    //                     exprStack.push(new IdentifierNode{this->parseName(raw.first.begin() + idx, raw.first.end())});
-    //                     break;
-    //                 case LiteralType::INTEGER:
-    //                     exprStack.push(new IntegerNode{std::get<IntegerType>(raw.first[idx].type)});
-    //                     break;
-    //                 case LiteralType::FLOATING:
-    //                     exprStack.push(new FloatingNode{std::get<FloatingType>(raw.first[idx].type)});
-    //                     break;
-    //                 case LiteralType::BOOL:
-    //                     exprStack.push(new BooleanNode{std::get<BooleanType>(raw.first[idx].type)});
-    //                     break;
-    //                 case LiteralType::STRING:
-    //                     exprStack.push(new StringNode{std::get<StringLiteralType>(raw.first[idx].type)});
-    //                     break;
-    //                 case LiteralType::FNCALL:
-    //                     // TODO: This isn't even supported in the grammar yet.
-    //                     break;
-    //             }
-    //         },
-    //         pattern(as<OperatorType>(arg)) = [&] (OperatorType type) {
-    //             switch (type) { // TODO: Error check for amount in the exprStack.
-    //                 case OperatorType::NEG: {
-    //                     std::shared_ptr<ExpressionNode> expr = exprStack.top();
-    //                     exprStack.pop();
-    //                     exprStack.push(new UnaryOperatorNode{expr, type});
-    //                 } break;
-    //                 case OperatorType::ADD: case OperatorType::SUB: case OperatorType::MUL:
-    //                 case OperatorType::DIV: case OperatorType::MOD: {
-    //                     std::shared_ptr<ExpressionNode> left = exprStack.top();
-    //                     exprStack.pop();
-    //                     std::shared_ptr<ExpressionNode> right = exprStack.top();
-    //                     exprStack.pop();
-    //                     exprStack.push(new BinaryOperatorNode{left, right, type});
-    //                 } break;
-    //             }
-    //         },
-    //         pattern(as<Index*>(arg)) = [&] (Index* index) {
-    //             // TODO: PAIN.
-    //         }
-    //     );
-    // }
-    // if (exprStack.empty()) return nullptr;
-    // if (exprStack.size() > 1) {
-    //     // IDK Error or something?
-    // }
-    // exprStack.top();
 
     return expressions;
 }
@@ -584,14 +638,10 @@ std::vector<Name> Parser::parseNameList(Lexer& lexer) {
         if (name) names.push_back(std::move(*name));
         else break;
     }
-    if (names.empty()) {
-        // TODO: Error. NameList is not allowed to be empty.
-    }
     return names;
 }
 
 std::optional<Parser::VarDeclType> Parser::parseVarDeclType(Lexer& lexer) {
-    // TODO: Make odd item count.
     auto idOpt = this->expect<IdentifierType>(lexer);
     if (!idOpt) {
         auto type = this->tryParseType(lexer);

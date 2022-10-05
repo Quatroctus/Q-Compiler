@@ -37,6 +37,10 @@ obj1 obj2 = object2 {{0, 2}, {.5f}}; // Valid: Multi-Variable initialization to 
 //   otherwise must be a single implicit constructor call.
 //    multi-var = type {expressioncsl}, ..., {expressioncsl}
 
+
+exprA + if expr expr elif expr expr else expr                 =>    if expr exprA + expr elif expr exprA + expr else exprA + expr
+(if condA exprA else exprB) + if condC exprC else exprD       =>    if condC (if condA exprA else exprB) + exprC else (if condA exprA else exprB) + exprD    => if condC (if condA exprA + exprC else exprB + exprC) else if condA exprA + exprD else exprB + exprD
+
 main = args string[argc] i32 {
 
 }

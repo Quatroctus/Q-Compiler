@@ -26,7 +26,7 @@ struct ParseError {
 class Parser {
 public:
 
-    // TODO: Structures.
+    // TODO: User defined structures.
     void parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables, std::unordered_map<Name, QFunction>& functions);
 
     // Parses through the global state of a single .q file.
@@ -95,8 +95,10 @@ private:
     struct Index;
     struct FNCall;
     struct Constructor;
+    struct Conditional;
 
-    using ExpressionPiece = std::pair<size_t, std::variant<LiteralType, OperatorType, Index*, FNCall*, Constructor*>>; // Single part of an expression. 
+    // TODO: Change pointers to RAII pointers.
+    using ExpressionPiece = std::pair<size_t, std::variant<LiteralType, OperatorType, Conditional*, Index*, FNCall*, Constructor*>>; // Single part of an expression. 
     using RawExpression = std::vector<ExpressionPiece>; // One whole expression.
     struct ExpressionOrConstructor { // One whole expression or a constructor expression.
         std::variant<
@@ -116,6 +118,10 @@ private:
     };
     struct Constructor {
         CollectedExpressions arguments;
+    };
+    struct Conditional {
+        std::vector<std::pair<ExpressionOrConstructor, ExpressionOrConstructor>> conditionals;
+        std::optional<ExpressionOrConstructor> elseExpr;
     };
 
     CollectedExpressions collectExpressions(Lexer&, std::vector<Token>&);
@@ -186,6 +192,49 @@ private:
     std::vector<Name> parseNameList(Lexer&);
     using VarDeclType = std::pair<std::vector<std::pair<Name, Type>>, Type>;
     std::optional<VarDeclType> parseVarDeclType(Lexer&);
+
+    template<SingleType... SingleTypes, typename... TokenTypes>
+    std::vector<Token> collectAll(Lexer& lexer) {
+        using namespace mpark::patterns;
+        std::vector<Token> tokens;
+        Token tok = lexer.nextToken();
+        while (IF_IS(tok.type, anyof(as<SingleType>(anyof(SingleTypes...)), as<TokenTypes>(_)...))) {
+            tokens.push_back(std::move(tok));
+            tok = lexer.nextToken();
+        }
+        lexer.store(std::move(tok));
+        return tokens;
+    }
+
+    // template<SingleType... SingleTypes, typename... TokenTypes>
+    // std::vector<Token> collectUntilAll(Lexer& lexer, size_t count) {
+    //     using namespace mpark::patterns;
+    //     std::vector<Token> tokens;
+    //     Token tok = lexer.nextToken();
+    //     while (count && IF_IS(tok.type, anyof(as<SingleType>(anyof(SingleTypes...)), as<TokenTypes>(_)...))) {
+    //         tokens.push_back(std::move(tok));
+    //         count--;
+    //     }
+    //     lexer.store(std::move(tok));
+    //     return tokens;
+    // }
+
+    template<SingleType Incr, SingleType Decr>
+    void collectBalance(Lexer& lexer, std::vector<Token>& tokens, size_t start) { // IDEA: Make this take a vector as a param instead of returning.
+        using namespace mpark::patterns;
+        do {
+            tokens.push_back(lexer.nextToken());
+            match(tokens.back().type)(
+                pattern(as<SingleType>(Incr)) = [&] {
+                    start++;
+                },
+                pattern(as<SingleType>(Decr)) = [&] {
+                    start--;
+                },
+                pattern(_) = [] {}
+            );
+        } while (start != 0);
+    }
 
     template<SingleType... SingleTypes, typename... TokenTypes>
     std::vector<Token> collectUntil(Lexer& lexer) {

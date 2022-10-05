@@ -3,6 +3,7 @@
 #include <src/parser/ast/expression.hpp>
 
 struct ConditionalNode : public ExpressionNode {
+    std::optional<Type> returning{};
     std::vector<std::pair<std::shared_ptr<ExpressionNode>, std::shared_ptr<ExpressionNode>>> ifBlocks;
     std::shared_ptr<ExpressionNode> elseBlock;
 
@@ -25,32 +26,50 @@ struct ConditionalNode : public ExpressionNode {
                     llvm::BasicBlock* elseBlock = llvm::BasicBlock::Create(ctx, "else");
                     builder.CreateCondBr(conditional, ifBlock, elseBlock);
                     builder.SetInsertPoint(ifBlock);
-                    value->llvmEvaluate(qctx, ctx, builder);
-                    builder.CreateBr(continueBlock);
+                    auto[ifT, ifV] = value->llvmEvaluate(qctx, ctx, builder);
+                    if (this->returning) {
+                        auto[type, value] = ifT.convert(qctx, ctx, builder, ifV, *this->returning);
+                        builder.CreateRet(value);
+                    } else
+                        builder.CreateBr(continueBlock);
                     
                     currFunc->getBasicBlockList().push_back(elseBlock);
                     builder.SetInsertPoint(elseBlock);
-                    this->elseBlock->llvmEvaluate(qctx, ctx, builder);
-                    builder.CreateBr(continueBlock);
+                    auto[elT, elV] = this->elseBlock->llvmEvaluate(qctx, ctx, builder);
+                    if (this->returning) {
+                        auto[type, value] = elT.convert(qctx, ctx, builder, elV, *this->returning);
+                        builder.CreateRet(value);
+                    } else
+                        builder.CreateBr(continueBlock);
                 } else { // continueBlock
                     builder.CreateCondBr(conditional, ifBlock, continueBlock);
                     builder.SetInsertPoint(ifBlock);
-                    value->llvmEvaluate(qctx, ctx, builder);
-                    builder.CreateBr(continueBlock);
+                    auto[ifT, ifV] = value->llvmEvaluate(qctx, ctx, builder);
+                    if (this->returning) {
+                        auto[type, value] = ifT.convert(qctx, ctx, builder, ifV, *this->returning);
+                        builder.CreateRet(value);
+                    } else
+                        builder.CreateBr(continueBlock);
                 }
             } else { // elif Block
                 llvm::BasicBlock* elseBlock = llvm::BasicBlock::Create(ctx, "else");
                 builder.CreateCondBr(conditional, ifBlock, elseBlock);
                 builder.SetInsertPoint(ifBlock);
-                value->llvmEvaluate(qctx, ctx, builder);
-                builder.CreateBr(continueBlock);
+                auto[ifT, ifV] = value->llvmEvaluate(qctx, ctx, builder);
+                if (this->returning) {
+                    auto[type, value] = ifT.convert(qctx, ctx, builder, ifV, *this->returning);
+                    builder.CreateRet(value);
+                } else 
+                    builder.CreateBr(continueBlock);
 
                 currFunc->getBasicBlockList().push_back(elseBlock);
                 builder.SetInsertPoint(elseBlock);
             }
         }
-        currFunc->getBasicBlockList().push_back(continueBlock);
-        builder.SetInsertPoint(continueBlock);
+        if (!this->returning) {
+            currFunc->getBasicBlockList().push_back(continueBlock);
+            builder.SetInsertPoint(continueBlock);
+        }
         return TypedValue{BuiltinType::NIX, nullptr};
     } 
 

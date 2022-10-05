@@ -49,7 +49,6 @@ struct QFunction {
                     builder.CreateRetVoid();
                 } else {
                     // ERROR: Reached end of function expecting a return value.
-                    builder.CreateRetVoid(); // FIXME: Remove this after if statements support returning.
                 }
             } else {
                 auto[t, v] = val.first.convert(qctx, ctx, builder, val.second, this->returnType);

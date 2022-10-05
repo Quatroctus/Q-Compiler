@@ -107,6 +107,9 @@ void Parser::parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables,
                 //} else {
                     value = expressions[0];
                 //}
+                if (std::dynamic_pointer_cast<ConditionalNode>(value)) {
+                    std::dynamic_pointer_cast<ConditionalNode>(value)->returning = (*typing).second;
+                }
                 functions.emplace(names[0], QFunction{names[0], std::move((*typing).first), std::move((*typing).second), value});
             }
         }

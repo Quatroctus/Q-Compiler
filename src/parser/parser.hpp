@@ -157,12 +157,12 @@ private:
                 iter = std::next(iter);
                 if (IF_IS((*iter).type, as<SingleType>(SingleType::RBRACE))) {
                     type = MakeArrayType(std::move(*type), std::monostate{});
-                    continue;
+                } else {
+                    auto name = parseName(iter, end);
+                    type = MakeArrayType(std::move(*type), name);
                 } // TODO: Parse Expressions.
                 // TODO: Name hard to parse, because we won't know how much to advance `iter`.
                 //      Make shift solution would be to std::find_if to the next '['???
-                auto name = parseName(iter, end);
-                type = MakeArrayType(std::move(*type), name);
                 iter = std::find_if(iter, end, isLBrace);
             }
         }

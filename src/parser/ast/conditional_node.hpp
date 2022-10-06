@@ -77,6 +77,17 @@ struct ConditionalNode : public ExpressionNode {
 
     }
 
+    inline void setReturning(const Type& type) {
+        this->returning = type;
+        for (auto&[c, v] : this->ifBlocks) {
+        if (std::dynamic_pointer_cast<ConditionalNode>(v))
+            std::dynamic_pointer_cast<ConditionalNode>(v)->setReturning(type);
+        }
+        if (std::dynamic_pointer_cast<ConditionalNode>(this->elseBlock)) {
+            std::dynamic_pointer_cast<ConditionalNode>(this->elseBlock)->setReturning(type);
+        }
+    }
+
     inline virtual Type getType() const {
         return BuiltinType::NIX;
     }

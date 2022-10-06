@@ -15,6 +15,7 @@
 #include <src/parser/ast/fncall_node.hpp>
 #include <src/parser/ast/string_node.hpp>
 #include <src/parser/ast/unary_operator_node.hpp>
+#include <src/util/vector.hpp>
 
 #include <lib/patterns.hpp>
 
@@ -108,7 +109,7 @@ void Parser::parse(Lexer& lexer, std::unordered_map<Name, QVariable>& variables,
                     value = expressions[0];
                 //}
                 if (std::dynamic_pointer_cast<ConditionalNode>(value)) {
-                    std::dynamic_pointer_cast<ConditionalNode>(value)->returning = (*typing).second;
+                    std::dynamic_pointer_cast<ConditionalNode>(value)->setReturning((*typing).second);
                 }
                 functions.emplace(names[0], QFunction{names[0], std::move((*typing).first), std::move((*typing).second), value});
             }
@@ -147,6 +148,7 @@ std::vector<Token> Parser::collectType(Lexer& lexer) {
                 auto rbOpt = this->expect<SingleType::RBRACE>(lexer);
                 if (!rbOpt) {
                     lexer.store(lengthName);
+                    lexer.store(tokens); // TODO: Remove after expanding options for inside braces.
                 } else {
                     tokens.insert(tokens.end(), std::make_move_iterator(lengthName.begin()), std::make_move_iterator(lengthName.end()));
                     tokens.push_back(std::move((*rbOpt).first));
@@ -286,11 +288,12 @@ Parser::CollectedExpressions Parser::collectExpressions(Lexer& lexer, std::vecto
                             conditional->elseExpr = std::move(expr[0]);
                         }
                     }
-                    if (!lps.empty()) {
+                    if (!rps.empty()) {
                         tokens.insert(tokens.end(), std::make_move_iterator(rps.begin()), std::make_move_iterator(rps.end()));
                     }
                     expression.emplace_back(start, conditional);
                     lastWasOp = false;
+                    lexer.wipeStorage();
                     continue;
                 }
                 OperatorType opType{OperatorType::LPAREN};
@@ -304,6 +307,8 @@ Parser::CollectedExpressions Parser::collectExpressions(Lexer& lexer, std::vecto
                         case SingleType::RPAREN:
                             if (storage.empty()) {
                                 // ERROR: Unmatched parenthesis.
+                                std::cerr << "Unmatched parenthesis.\n";
+                                assert(false);
                             }
                             if (storage.back().second == OperatorType::LPAREN) {
                                 // ERROR: Empty parenthesis expression.
@@ -316,7 +321,8 @@ Parser::CollectedExpressions Parser::collectExpressions(Lexer& lexer, std::vecto
                             tokens.push_back(std::move((*op).first));
                             break;
                         case SingleType::MINUS:
-                            opType = OperatorType::NEG;
+                            if (lastWasOp) opType = OperatorType::NEG;
+                            else opType = OperatorType::SUB;
                             goto handleOperator;
                         default:
                             if (lastWasOp) {
@@ -339,10 +345,12 @@ Parser::CollectedExpressions Parser::collectExpressions(Lexer& lexer, std::vecto
                     }
                     lastWasOp = true;
                 } else {
-                    if (!lastWasOp) {
+                    if (!lastWasOp || this->expect<SingleType::END>(lexer)) {
                         while (!storage.empty()) {
                             if (storage.back().second == OperatorType::LPAREN) {
                                 // ERROR: Unmatched Parenthesis.
+                                std::cerr << "Unmatched parenthesis in expression.\n";
+                                assert(false);
                             }
                             expression.push_back(std::move(storage.back()));
                             storage.pop_back();
@@ -404,6 +412,8 @@ Parser::CollectedExpressions Parser::collectExpressions(Lexer& lexer, std::vecto
                                         auto rparen = this->expect<SingleType::RPAREN>(lexer);
                                         if (!rparen){
                                             // ERROR: Unmatched Parenthesis.
+                                            std::cerr << "Unmatched parenthesis in function expression.\n";
+                                            assert(false);
                                         }
                                         tokens.push_back(std::move((*rparen).first));
                                         expression.emplace_back(stored, new FNCall{std::move(expressions)});
@@ -570,8 +580,9 @@ std::shared_ptr<ExpressionNode> Parser::parseExpression(ExpressionOrConstructor&
                         );
                     });
                     std::shared_ptr<ExpressionNode> el{};
-                    if (cond->elseExpr)
+                    if (cond->elseExpr) {
                         el = this->parseExpression((*cond->elseExpr), tokens);
+                    }
                     exprStack.push_back(std::make_shared<ConditionalNode>(std::move(ifs), el));
                 },
                 pattern(as<OperatorType>(arg)) = [&](OperatorType type) {
@@ -580,6 +591,9 @@ std::shared_ptr<ExpressionNode> Parser::parseExpression(ExpressionOrConstructor&
                         {
                             std::shared_ptr<ExpressionNode> expr = exprStack.back();
                             exprStack.pop_back();
+                            if (std::dynamic_pointer_cast<ConditionalNode>(expr)) {
+
+                            }
                             exprStack.push_back(std::make_shared<UnaryOperatorNode>(expr, type));
                             break;
                         }
@@ -590,7 +604,55 @@ std::shared_ptr<ExpressionNode> Parser::parseExpression(ExpressionOrConstructor&
                             exprStack.pop_back();
                             std::shared_ptr<ExpressionNode> left = exprStack.back();
                             exprStack.pop_back();
-                            exprStack.push_back(std::make_shared<BinaryOperatorNode>(left, right, type));
+
+                            auto lif = std::dynamic_pointer_cast<ConditionalNode>(left);
+                            auto rif = std::dynamic_pointer_cast<ConditionalNode>(right);
+
+                            if (lif && rif) {
+                                for (auto&[lC, lV] : lif->ifBlocks) {
+                                    std::vector<std::pair<std::shared_ptr<ExpressionNode>, std::shared_ptr<ExpressionNode>>> blocks{rif->ifBlocks.size()};
+                                    std::transform(rif->ifBlocks.begin(), rif->ifBlocks.end(), blocks.begin(), 
+                                    [&](std::pair<std::shared_ptr<ExpressionNode>, std::shared_ptr<ExpressionNode>>& p) {
+                                        return std::make_pair(p.first, std::make_shared<BinaryOperatorNode>(lV, p.second, type));
+                                    });
+                                    std::shared_ptr<ExpressionNode> el{};
+                                    if (rif->elseBlock) {
+                                        el = std::make_shared<BinaryOperatorNode>(lV, rif->elseBlock, type);
+                                    }
+                                    lV = std::make_shared<ConditionalNode>(std::move(blocks), el);
+                                }
+                                if (lif->elseBlock) {
+                                    std::vector<std::pair<std::shared_ptr<ExpressionNode>, std::shared_ptr<ExpressionNode>>> blocks{rif->ifBlocks.size()};
+                                    std::transform(rif->ifBlocks.begin(), rif->ifBlocks.end(), blocks.begin(), 
+                                    [&](std::pair<std::shared_ptr<ExpressionNode>, std::shared_ptr<ExpressionNode>>& p) {
+                                        return std::make_pair(p.first, std::make_shared<BinaryOperatorNode>(lif->elseBlock, p.second, type));
+                                    });
+                                    std::shared_ptr<ExpressionNode> el{};
+                                    if (rif->elseBlock) {
+                                        el = std::make_shared<BinaryOperatorNode>(lif->elseBlock, rif->elseBlock, type);
+                                    }
+                                    lif->elseBlock = std::make_shared<ConditionalNode>(std::move(blocks), el);
+                                }
+                                exprStack.push_back(left);
+                            } else if (rif) {
+                                for (auto& p : rif->ifBlocks) {
+                                    p.second = std::make_shared<BinaryOperatorNode>(left, p.second, type);
+                                }
+                                if (rif->elseBlock) {
+                                    rif->elseBlock = std::make_shared<BinaryOperatorNode>(left, rif->elseBlock, type);
+                                }
+                                exprStack.push_back(right);
+                            } else if (lif) {
+                                for (auto& p : lif->ifBlocks) {
+                                    p.second = std::make_shared<BinaryOperatorNode>(p.second, right, type);
+                                }
+                                if (lif->elseBlock) {
+                                    lif->elseBlock = std::make_shared<BinaryOperatorNode>(lif->elseBlock, right, type);
+                                }
+                                exprStack.push_back(left);
+                            } else {
+                                exprStack.push_back(std::make_shared<BinaryOperatorNode>(left, right, type));
+                            }
                             break;
                         }
                         default:
@@ -648,38 +710,35 @@ std::optional<Parser::VarDeclType> Parser::parseVarDeclType(Lexer& lexer) {
     auto idOpt = this->expect<IdentifierType>(lexer);
     if (!idOpt) {
         auto type = this->tryParseType(lexer);
-        if (type) return std::make_pair(std::vector<std::pair<Name, Type>>{}, *type);
+        if (type) return std::make_pair(std::vector<std::pair<Name, Type>>{}, std::move(*type));
         return std::nullopt;
     }
 
     std::vector<std::pair<Name, Type>> params{};
     while (true) {
-        auto type = this->collectType(lexer);
-        if (type.empty()) {
-            lexer.store(std::move((*idOpt).first));
-            auto type = this->tryParseType(lexer);
-            if (type) return std::make_pair(std::move(params), std::move(*type));
-            return std::nullopt;
-        }
-        
-        auto nextIdOpt = this->expect<IdentifierType>(lexer);
-        if (!nextIdOpt) {
-            lexer.store(type);
-            lexer.store(std::move((*idOpt).first));
+        auto typeTokens = this->collectType(lexer);
+        if (typeTokens.empty()) {
+            lexer.store(std::move(*idOpt).first);
             auto type = this->tryParseType(lexer);
             if (type) {
                 return std::make_pair(std::move(params), std::move(*type));
             }
             return std::nullopt;
         }
-        auto ty{this->parseType(type)};
-        params.emplace_back(Name{{}, std::move((*idOpt).second.value)}, ty);
-        idOpt = nextIdOpt;
-    }
 
-    if (!idOpt) return std::nullopt;
-    lexer.store(std::move((*idOpt).first));
-    auto type = this->tryParseType(lexer);
-    if (!type) return std::nullopt;
-    return std::make_pair(std::move(params), std::move(*type));
+        auto nextIdOpt = this->expect<IdentifierType>(lexer);
+        if (!nextIdOpt) {
+            lexer.store(typeTokens);
+            lexer.store(std::move((*idOpt).first));
+            auto type = this->tryParseType(lexer);
+            if (type) {
+                return std::make_pair(params, *type);
+            } 
+            return std::nullopt;
+        }
+        params.emplace_back(Name{{}, (*idOpt).second.value}, this->parseType(typeTokens));
+        idOpt = std::move(nextIdOpt);
+    }
+    std::cerr << "Unreachable code.\n";
+    assert(false);
 }

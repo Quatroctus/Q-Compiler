@@ -22,7 +22,7 @@ public:
 
     inline void primeStorage(std::vector<Token>&& storage) {
         this->storage = std::move(storage);
-        (*this->storage).push_back(Token{storage.back().location, SingleType::END});
+        (*this->storage).push_back(Token{(*this->storage).back().location, SingleType::END});
         std::reverse((*this->storage).begin(), (*this->storage).end());
     }
     inline void wipeStorage() { this->storage.reset(); }

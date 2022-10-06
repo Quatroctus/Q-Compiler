@@ -29,7 +29,7 @@ Token Lexer::nextToken() {
     static std::optional<Token> preservedToken{};
 
     if (this->storage) {
-        auto storage = *this->storage;
+        auto& storage = *this->storage;
         if (storage.size() == 1) return storage.back();
         auto tok = storage.back();
         storage.pop_back();
@@ -66,7 +66,7 @@ Token Lexer::nextToken() {
 
 void Lexer::store(Token&& tok) {
     if (this->storage) {
-        auto storage = *this->storage;
+        auto& storage = *this->storage;
         storage.push_back(std::move(tok));
     } else {
         this->toks.push_front(std::move(tok));
@@ -75,7 +75,7 @@ void Lexer::store(Token&& tok) {
 
 void Lexer::store(std::vector<Token>& tokens) {
     if (this->storage) {
-        auto storage = *this->storage;
+        auto& storage = *this->storage;
         storage.insert(storage.end(), std::make_move_iterator(tokens.rbegin()), std::make_move_iterator(tokens.rend()));
     } else {
         this->toks.insert(this->toks.begin(), std::make_move_iterator(tokens.begin()), std::make_move_iterator(tokens.end()));

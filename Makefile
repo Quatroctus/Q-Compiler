@@ -10,13 +10,21 @@ OBJ_FILES := $(patsubst ./src/%.cpp, ./obj/%.o, $(CPP_FILES))
 OBJ_FILES := ./obj/lexical/q_scanner.o $(OBJ_FILES)
 OBJ_DIRS := $(shell find ./src/ -type d)
 OBJ_DIRS := $(patsubst ./src/%, ./obj/%, $(OBJ_DIRS))
-all: $(OBJ_DIRS) release
+
+EXAMPLES := $(shell find ./examples/ -name "*.q" -type f)
+EXAMPLES := $(patsubst %.q, %.o, $(EXAMPLES))
+all: $(OBJ_DIRS) ./qcc
 
 debug: 
 	$(info $$var is [${OBJ_FILES}])
 
-release: $(OBJ_FILES) ./obj/main.o
-	$(CC) $(OPT) -o qcc $^ $(LIBS)
+./qcc: $(OBJ_FILES) ./obj/main.o
+	$(CC) $(OPT) -o $@ $^ $(LIBS)
+
+run_tests: all $(EXAMPLES)
+
+./examples/%.o: ./examples/%.q
+	- ./qcc $< 2> $<.out
 
 ./obj/main.o: ./src/main.cpp
 	$(CC) $(OPT) -c -o $@ $<
@@ -33,4 +41,6 @@ release: $(OBJ_FILES) ./obj/main.o
 
 clean:
 	- find ./obj/ -type f -name "*.o" -exec rm -f {} \;
+	- find ./examples/ -type f -name "*.o" -exec rm -f {} \;
+	- find ./examples/ -type f -name "*.q.out" -exec rm -f {} \;
 	- rm -rf qcc ./src/lexical/q_scanner.cpp ./src/lexical/q_scanner.hpp

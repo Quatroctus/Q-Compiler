@@ -29,6 +29,9 @@ std::ostream& operator<<(std::ostream& out, SingleType type) {
         case SingleType::LBRACE: return out << "LBRACE";
         case SingleType::RBRACE: return out << "RBRACE";
         case SingleType::SEMICOLON: return out << "SEMICOLON";
+        case SingleType::IF: return out << "IF";
+        case SingleType::ELIF: return out << "ELIF";
+        case SingleType:: ELSE: return out << "ELSE";
         case SingleType::OFFER: return out << "OFFER";
         case SingleType::EXERT: return out << "EXERT";
         case SingleType::NIX: return out << "NIX";

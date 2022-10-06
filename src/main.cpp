@@ -131,7 +131,7 @@ int main(int argc, char** args) {
         llvm::verifyFunction(*((llvm::Function*) qctx.functions.at(fnName).getCallee()));
     }
 
-    qctx.theModule->print(llvm::outs(), NULL);
+    qctx.theModule->print(llvm::errs(), NULL);
     std::string outFile = args[1];
     outFile = outFile.substr(0, Util::FindLast(outFile, '.')) + 'o';
     generateMachineCode(outFile, qctx);
